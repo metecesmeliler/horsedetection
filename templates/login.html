@@ -1,0 +1,46 @@
+{% include 'layout.html' %}
+
+<div class="container">
+    <div class="card" style="border: none;">
+        <div class="card-header" style="color: white; background-color: lightslategray; border: none;">
+            Giriş Yap
+        </div>
+        <div class="card-body" style="background-color: lavender;">
+            {% if msg %}
+            {% if msg == 'Logout Successful' or msg == 'User successfully created'
+            or msg == 'Şifre başarıyla değiştirildi.' %}
+            <div class="alert alert-success" role="alert">
+                {{msg}}
+            </div>
+            {% else %}
+            <div class="alert alert-danger" role="alert">
+                {{msg}}
+            </div>
+            {% endif %}
+            {% endif %}
+
+            <form method="POST" action="/auth">
+                <div class="form-row">
+                    <div class="form-group col-md-7" style="color: black;">
+                        <label>Email</label>
+                        <input type="text" class="form-control bordered-input"
+                               name="email" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md-7" style="color: black;">
+                        <label>Şifre</label>
+                        <input type="password" class="form-control bordered-input"
+                               name="password" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Giriş Yap</button>
+            </form>
+        </div>
+        <div class="card-footer text-muted" style="background-color: lightslategray; border: none;">
+            <a href="/auth/register" style="color: white;"> Kayıt Ol? </a>
+            <span class="space"></span>
+            <a href="/auth/forgot_password" style="color: white;"> Şifremi Unuttum? </a>
+        </div>
+    </div>
+</div>

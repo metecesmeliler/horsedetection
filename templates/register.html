@@ -1,0 +1,47 @@
+{% include 'layout.html' %}
+
+<div class="container">
+    <div class="card" style="border: none;">
+        <div class="card-header" style="color: white; background-color: lightslategray; border: none;">
+            Kayıt Ol
+        </div>
+        <div class="card-body" style="background-color: lavender;">
+            {% if msg %}
+            <div class="alert alert-danger" role="alert">
+                {{msg}}
+            </div>
+            {% endif %}
+
+            <form method="POST" action="/auth/register">
+                <div class="form-row">
+                    <div class="form-group col-md-7" style="color: black;">
+                        <label>Email</label>
+                        <input type="email" class="form-control bordered-input" name="email" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md-7" style="color: black;">
+                        <label>İsim Soyisim</label>
+                        <input type="text" class="form-control bordered-input" name="name" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md-7" style="color: black;">
+                        <label>Şifre</label>
+                        <input type="password" class="form-control bordered-input" name="password" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md-7" style="color: black;">
+                        <label>Şifreyi Onayla</label>
+                        <input type="password" class="form-control bordered-input" name="password2" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Kayıt Ol</button>
+            </form>
+        </div>
+        <div class="card-footer text-muted" style="background-color: lightslategray; border: none;">
+            <a href="/auth" style="color: white;">Zaten bir hesabım var </a>
+        </div>
+    </div>
+</div>

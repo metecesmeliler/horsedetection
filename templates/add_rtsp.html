@@ -1,0 +1,23 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="center-content">
+<h3>Kamera Ekle</h3>
+</div>
+<hr>
+{% if msg %}
+<div class="mt-3 alert alert-success">
+    {{ msg }}
+</div>
+{% endif %}
+<div class="jumbotron text-center custom-jumbotron">
+<form method="post" action="/admin/add_rtsp">
+    <div class="form-group offset-2 col-md-8">
+        <label for="url"><strong>URL</strong></label>
+        <input type="text" class="form-control bordered-input" id="url" name="url" placeholder="Kamera girin" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Kamera Ekle</button>
+</form>
+</div>
+
+{% endblock %}

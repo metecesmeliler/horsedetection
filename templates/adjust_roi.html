@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="center-content">
+<h3>ROI Ayarla</h3>
+</div>
+<hr>
+<div class="jumbotron text-center custom-jumbotron">
+<p><strong>Orijinal görünüm için tüm değerlere 0 giriniz</strong></p>
+<form method="post" action="{{ '/camfeed/adjust_roi/' ~ cam_index }}">
+    <div class="form-row justify-content-center">
+        <div class="form-group col-md-3">
+        <label for="x1">İlk Nokta X Koordinatı</label>
+        <input type="number" class="form-control bordered-input" id="x1" name="x1" placeholder="X1" required>
+        </div>
+        <div class="form-group col-md-3">
+        <label for="y1">İlk Nokta Y Koordinatı</label>
+        <input type="number" class="form-control bordered-input" id="y1" name="y1" placeholder="Y1" required>
+        </div>
+    </div>
+    <div class="form-row justify-content-center">
+        <div class="form-group col-md-3">
+        <label for="x2">İkinci Nokta X Koordinatı</label>
+        <input type="number" class="form-control bordered-input" id="x2" name="x2" placeholder="X2" required>
+        </div>
+        <div class="form-group col-md-3">
+        <label for="y2">İkinci Nokta Y Koordinatı</label>
+        <input type="number" class="form-control bordered-input" id="y2" name="y2" placeholder="Y2" required>
+        </div>
+    </div>
+    <button type="submit" class="btn btn-primary">ROI Ayarla</button>
+</form>
+</div>
+
+{% endblock %}

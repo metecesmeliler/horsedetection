@@ -1,0 +1,18 @@
+{% extends "layout.html" %}
+
+{% block content %}
+
+<div class="center-content">
+<h3>Kullanıcı Bilgisi</h3>
+</div>
+<hr>
+<div class="jumbotron text-center custom-jumbotron-white">
+    <p><strong>Email:</strong> {{ user_info.email }}</p>
+    <p><strong>İsim Soyisim:</strong> {{ user_info.name }}</p>
+    <p><strong>Role:</strong> {{ user_info.role }}</p>
+    <div class="button-container">
+        <a href="/auth/change_password" class="btn btn-primary">Şifre Değiştir</a>
+    </div>
+</div>
+
+{% endblock %}
