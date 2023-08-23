@@ -122,10 +122,8 @@ def detect_objects(video_capture, thread_id, roi_settings):
                         if last_detection_time is None or (current_time - last_detection_time).total_seconds() >= 60:
                             last_detection_time = current_time
                             detection_log.insert(0, "At algılandı! Kamera " + str(thread_id) + ": " + str(datetime.datetime.now()))
-                            print("Before sending email")
-                            send_detection_email(thread_id)
-                            print("After sending email")
-                        print("Horse detected")
+                            # send_detection_email(thread_id)
+                        print("###################### Horse detected ######################")
                     except Exception as exc:
                         print(f"An exception occurred in print_result {thread_id}: {exc}")
 
@@ -136,8 +134,8 @@ def detect_objects(video_capture, thread_id, roi_settings):
         options = ObjectDetectorOptions(
             base_options=BaseOptions(model_asset_path=model_path),
             running_mode=VisionRunningMode.LIVE_STREAM,
-            score_threshold=0.2,
-            max_results=1,
+            score_threshold=0.1,
+            max_results=5,
             result_callback=print_result)
 
         with ObjectDetector.create_from_options(options) as detector:
