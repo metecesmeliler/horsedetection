@@ -2,7 +2,7 @@
 
 {% block content %}
 <div class="center-content">
-  <h3>Kameralar</h3>
+  <h3 style="color: white;">Kameralar</h3>
 </div>
 <hr>
 {% if msg %}
@@ -44,7 +44,7 @@
 <div class="row">
   {% for cam_index in range(1, num_cameras + 1) %}
     <div class="col-md-6">
-      <h5>Kamera {{ cam_index }}</h5>
+      <h5 style="color: white;">Kamera {{ cam_index }}</h5>
       <div class="video-container">
         <img src="{{ '/camfeed/stream_camera/' ~ cam_index }}" alt="Camera Feed" style="border: 4px solid lightslategray">
       </div>
