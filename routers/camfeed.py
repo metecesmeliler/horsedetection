@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.responses import StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -44,7 +44,6 @@ email_list = []
 detection_log = []
 num_cameras = 0
 last_detection_time = datetime.datetime.min
-last_timestamp_ms = None
 detection_thread = None
 detection_flag = None
 
@@ -55,6 +54,17 @@ class RoiSettings:
         self.y1 = y1
         self.x2 = x2
         self.y2 = y2
+
+
+def read_frame(video_capture, roi_settings):
+    ret, frame = video_capture.read()
+    if not ret:
+        return None
+
+    if not (roi_settings.x1 == roi_settings.x2 == roi_settings.y1 == roi_settings.y2) \
+            or roi_settings.x1 != 0:
+        frame = frame[roi_settings.y1:roi_settings.y2, roi_settings.x1:roi_settings.x2]
+    return frame
 
 
 def send_detection_email(cam_id):
@@ -72,12 +82,9 @@ def send_detection_email(cam_id):
 def generate_frames(cap, roi_settings):
     try:
         while True:
-            ret, frame = cap.read()
-            if not ret:
+            frame = read_frame(cap, roi_settings)
+            if frame is None:
                 break
-
-            if not (roi_settings.x1 == roi_settings.x2 == roi_settings.y1 == roi_settings.y2) or roi_settings.x1 != 0:
-                frame = frame[roi_settings.y1:roi_settings.y2, roi_settings.x1:roi_settings.x2]
             _, img_encoded = cv2.imencode(".jpg", frame)
             img_byte = img_encoded.tobytes()
             yield (b"--frame\r\n"
@@ -87,13 +94,13 @@ def generate_frames(cap, roi_settings):
 
 
 def detect_objects(video_capture, thread_id, roi_settings):
-    global last_timestamp_ms
+    last_timestamp_ms = None
     global detection_flag
     global last_detection_time
     last_detection_time = datetime.datetime.min
     try:
-        model_path = r'C:\Documents\efficientdet_lite0.tflite'
-        # model_path2 = r'C:\Documents\efficientdet_lite2.tflite'
+        # model_path = r'C:\Documents\efficientdet_lite0.tflite'
+        model_path = r'C:\Documents\efficientdet_lite2.tflite'
         BaseOptions = mp.tasks.BaseOptions
         DetectionResult = mp.tasks.components.containers.DetectionResult
         ObjectDetector = mp.tasks.vision.ObjectDetector
@@ -121,12 +128,14 @@ def detect_objects(video_capture, thread_id, roi_settings):
                         current_time = datetime.datetime.now()
                         if last_detection_time is None or (current_time - last_detection_time).total_seconds() >= 60:
                             last_detection_time = current_time
-                            detection_log.insert(0, "At algılandı! Kamera " + str(thread_id) + ": " + str(datetime.datetime.now()))
+                            detection_log.insert(0, "At algılandı! Kamera " + str(thread_id) + ": " +
+                                                 str(datetime.datetime.now()))
                             # send_detection_email(thread_id)
                         print("###################### Horse detected ######################")
                     except Exception as exc:
                         print(f"An exception occurred in print_result {thread_id}: {exc}")
-
+                elif category_name == 'person':
+                    print("********************** Person Detected **********************")
                 print(f'  Category Score: {category_score}')
                 print(f'  Category Name: {category_name}')
                 print()
@@ -140,13 +149,9 @@ def detect_objects(video_capture, thread_id, roi_settings):
 
         with ObjectDetector.create_from_options(options) as detector:
             while detection_flag:
-                ret, frame = video_capture.read()
-                if not ret:
+                frame = read_frame(video_capture, roi_settings)
+                if frame is None:
                     break
-
-                if not (roi_settings.x1 == roi_settings.x2 == roi_settings.y1 == roi_settings.y2)\
-                        or roi_settings.x1 != 0:
-                    frame = frame[roi_settings.y1:roi_settings.y2, roi_settings.x1:roi_settings.x2]
                 frame_np = np.array(frame)
                 frame_rgb = cv2.cvtColor(frame_np, cv2.COLOR_BGR2RGB)
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
@@ -188,7 +193,7 @@ def generate_detection_log():
 
 
 @router.get("/", response_class=HTMLResponse)
-async def camfeed(user: user_dependency, db: db_dependency, request: Request, background_tasks: BackgroundTasks):
+async def camfeed(user: user_dependency, db: db_dependency, request: Request):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
     global prev_rtsp_urls
@@ -216,13 +221,12 @@ async def camfeed(user: user_dependency, db: db_dependency, request: Request, ba
 
     global num_cameras
     num_cameras = len(video_captures)
-    # background_tasks.add_task(concurrent_detection)
     return templates.TemplateResponse("camfeed.html",
                                       {"request": request, "num_cameras": num_cameras, "user": user})
 
 
 @router.get("/stream_camera/{cam_index}")
-async def stream_camera(user: user_dependency, cam_index: int, background_tasks: BackgroundTasks):
+async def stream_camera(user: user_dependency, cam_index: int):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
     global video_captures
@@ -231,7 +235,6 @@ async def stream_camera(user: user_dependency, cam_index: int, background_tasks:
 
     roi_settings = roi_settings_list[cam_index - 1]
     cap = video_captures[cam_index - 1]
-    # background_tasks.add_task(concurrent_detection, cam_index, cap)
     return StreamingResponse(generate_frames(cap, roi_settings), media_type="multipart/x-mixed-replace;boundary=frame")
 
 
@@ -273,7 +276,7 @@ async def adjust_roi(request: Request, user: user_dependency, cam_index: int):
 
 
 @router.post("/start_detection", response_class=HTMLResponse)
-async def start_detection(request: Request, user: user_dependency, background_tasks: BackgroundTasks):
+async def start_detection(request: Request, user: user_dependency):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
     global detection_thread
@@ -281,7 +284,6 @@ async def start_detection(request: Request, user: user_dependency, background_ta
     global detection_log
     msg = "Takip çoktan başladı"
     detection_flag = True
-    # background_tasks.add_task(concurrent_detection)
     if detection_thread is None or not detection_thread.is_alive():
         detection_flag = True
         detection_thread = threading.Thread(target=concurrent_detection)
