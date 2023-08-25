@@ -10,9 +10,9 @@ from database import SessionLocal
 from typing import Annotated
 import mediapipe as mp
 from mediapipe.tasks import python
-import concurrent.futures
+import multiprocessing
 import numpy as np
-import threading
+import mp_shared
 import datetime
 import cv2
 import time
@@ -37,15 +37,12 @@ db_dependency = Annotated[Session, Depends(get_db)]
 user_dependency = Annotated[dict, Depends(get_current_user)]
 futures = []
 prev_rtsp_urls = []
-video_captures = []
-video_captures_detection = []
 roi_settings_list = []
 email_list = []
 detection_log = []
 num_cameras = 0
+detection_process = None
 last_detection_time = datetime.datetime.min
-detection_thread = None
-detection_flag = None
 
 
 class RoiSettings:
@@ -54,17 +51,6 @@ class RoiSettings:
         self.y1 = y1
         self.x2 = x2
         self.y2 = y2
-
-
-def read_frame(video_capture, roi_settings):
-    ret, frame = video_capture.read()
-    if not ret:
-        return None
-
-    if not (roi_settings.x1 == roi_settings.x2 == roi_settings.y1 == roi_settings.y2) \
-            or roi_settings.x1 != 0:
-        frame = frame[roi_settings.y1:roi_settings.y2, roi_settings.x1:roi_settings.x2]
-    return frame
 
 
 def send_detection_email(cam_id):
@@ -82,9 +68,12 @@ def send_detection_email(cam_id):
 def generate_frames(cap, roi_settings):
     try:
         while True:
-            frame = read_frame(cap, roi_settings)
-            if frame is None:
+            ret, frame = cap.read()
+            if not ret:
                 break
+
+            if not (roi_settings.x1 == roi_settings.x2 == roi_settings.y1 == roi_settings.y2) or roi_settings.x1 != 0:
+                frame = frame[roi_settings.y1:roi_settings.y2, roi_settings.x1:roi_settings.x2]
             _, img_encoded = cv2.imencode(".jpg", frame)
             img_byte = img_encoded.tobytes()
             yield (b"--frame\r\n"
@@ -93,11 +82,10 @@ def generate_frames(cap, roi_settings):
         print(f"An exception occurred in stream_video: {e}")
 
 
-def detect_objects(video_capture, thread_id, roi_settings):
+def detect_objects(url, thread_id, roi_settings, detection_logs, detection_time_last, detection_event):
+    print("Inside detect_objects")
     last_timestamp_ms = None
-    global detection_flag
-    global last_detection_time
-    last_detection_time = datetime.datetime.min
+    detection_time_last = datetime.datetime.min
     try:
         # model_path = r'C:\Documents\efficientdet_lite0.tflite'
         model_path = r'C:\Documents\efficientdet_lite2.tflite'
@@ -108,8 +96,8 @@ def detect_objects(video_capture, thread_id, roi_settings):
         VisionRunningMode = mp.tasks.vision.RunningMode
 
         def print_result(result: DetectionResult, output_image: mp.Image, timestamp_ms: int):
-            global last_detection_time
-            global detection_log
+            nonlocal detection_time_last
+            nonlocal detection_logs
             for i, detection in enumerate(result.detections):
                 print(f'Thread: {thread_id} Detection #{i + 1}:')
 
@@ -124,18 +112,18 @@ def detect_objects(video_capture, thread_id, roi_settings):
                 category_score = category.score
                 category_name = category.category_name
                 if category_name == 'horse':
-                    try:
-                        current_time = datetime.datetime.now()
-                        if last_detection_time is None or (current_time - last_detection_time).total_seconds() >= 60:
-                            last_detection_time = current_time
-                            detection_log.insert(0, "At algılandı! Kamera " + str(thread_id) + ": " +
-                                                 str(datetime.datetime.now()))
-                            # send_detection_email(thread_id)
-                        print("###################### Horse detected ######################")
-                    except Exception as exc:
-                        print(f"An exception occurred in print_result {thread_id}: {exc}")
+                    print("###################### Horse detected ######################")
                 elif category_name == 'person':
                     print("********************** Person Detected **********************")
+                elif category_name == 'clock':
+                    try:
+                        current_time = datetime.datetime.now()
+                        if (current_time - detection_time_last).total_seconds() >= 60:
+                            detection_time_last = current_time
+                            detection_logs.insert(0, "At algılandı! Kamera " + str(thread_id) + ": "
+                                                  + str(datetime.datetime.now()))
+                    except Exception as exc:
+                        print(f"An exception occurred in print_result {thread_id}: {exc}")
                 print(f'  Category Score: {category_score}')
                 print(f'  Category Name: {category_name}')
                 print()
@@ -148,10 +136,20 @@ def detect_objects(video_capture, thread_id, roi_settings):
             result_callback=print_result)
 
         with ObjectDetector.create_from_options(options) as detector:
-            while detection_flag:
-                frame = read_frame(video_capture, roi_settings)
-                if frame is None:
+            try:
+                camera_id = int(url)
+                video_capture = cv2.VideoCapture(camera_id)
+            except ValueError:
+                video_capture = cv2.VideoCapture(url)
+            while detection_event.is_set():
+                ret, frame = video_capture.read()
+                if not ret:
+                    print("Error when getting the frame")
                     break
+
+                if not (roi_settings.x1 == roi_settings.x2 == roi_settings.y1 == roi_settings.y2)\
+                        or roi_settings.x1 != 0:
+                    frame = frame[roi_settings.y1:roi_settings.y2, roi_settings.x1:roi_settings.x2]
                 frame_np = np.array(frame)
                 frame_rgb = cv2.cvtColor(frame_np, cv2.COLOR_BGR2RGB)
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
@@ -166,21 +164,22 @@ def detect_objects(video_capture, thread_id, roi_settings):
         print(f"An exception occurred in thread {thread_id}: {e}")
 
 
-def concurrent_detection():
-    global futures
-    global video_captures
-    global num_cameras
-    global roi_settings_list
-
+def concurrent_detection(prev_rtsp_url_list, roi_setting_list, detection_logs, detection_time_last, detection_event):
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=num_cameras) as executor:
-            for cap, thread_id in zip(video_captures, range(num_cameras)):
-                roi_settings = roi_settings_list[thread_id]
-                futures.append(executor.submit(detect_objects, cap, thread_id + 1, roi_settings))
+        with multiprocessing.Pool(processes=len(prev_rtsp_url_list)) as pool:
+            async_results = []
+            for url, thread_id in zip(prev_rtsp_url_list, range(len(prev_rtsp_url_list))):
+                roi_settings = roi_setting_list[thread_id]
+                async_result = pool.apply_async(detect_objects,
+                                                args=(url, thread_id + 1, roi_settings,
+                                                      detection_logs, detection_time_last, detection_event))
+                async_results.append(async_result)
+            for async_result in async_results:
+                async_result.get()
     except Exception as e:
         print(f"An exception occurred in concurrent_detection: {e}")
     finally:
-        futures.clear()
+        async_results.clear()
 
 
 def generate_detection_log():
@@ -197,8 +196,6 @@ async def camfeed(user: user_dependency, db: db_dependency, request: Request):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
     global prev_rtsp_urls
-    global video_captures
-    global video_captures_detection
     global roi_settings_list
     global email_list
 
@@ -207,20 +204,12 @@ async def camfeed(user: user_dependency, db: db_dependency, request: Request):
     rtsp_urls = [url[0] for url in rtsp_urls]
     email_list = [approved.email for approved in db.query(Users).filter_by(approved=True).all()]
     if rtsp_urls != prev_rtsp_urls:
-        video_captures.clear()
-        for url in rtsp_urls:
-            try:
-                camera_id = int(url)
-                video_captures.append(cv2.VideoCapture(camera_id))
-                video_captures_detection.append(cv2.VideoCapture(camera_id))
-            except ValueError:
-                video_captures.append(cv2.VideoCapture(url))
-                video_captures_detection.append(cv2.VideoCapture(url))
+        for _ in rtsp_urls:
             roi_settings_list.append(RoiSettings())
         prev_rtsp_urls = rtsp_urls
 
     global num_cameras
-    num_cameras = len(video_captures)
+    num_cameras = len(prev_rtsp_urls)
     return templates.TemplateResponse("camfeed.html",
                                       {"request": request, "num_cameras": num_cameras, "user": user})
 
@@ -229,12 +218,17 @@ async def camfeed(user: user_dependency, db: db_dependency, request: Request):
 async def stream_camera(user: user_dependency, cam_index: int):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
-    global video_captures
-    if cam_index < 1 or cam_index > len(video_captures):
+    global prev_rtsp_urls
+    if cam_index < 1 or cam_index > len(prev_rtsp_urls):
         raise HTTPException(status_code=400, detail="Invalid camera index")
 
     roi_settings = roi_settings_list[cam_index - 1]
-    cap = video_captures[cam_index - 1]
+    url = prev_rtsp_urls[cam_index - 1]
+    try:
+        camera_id = int(url)
+        cap = cv2.VideoCapture(camera_id)
+    except ValueError:
+        cap = cv2.VideoCapture(url)
     return StreamingResponse(generate_frames(cap, roi_settings), media_type="multipart/x-mixed-replace;boundary=frame")
 
 
@@ -242,7 +236,8 @@ async def stream_camera(user: user_dependency, cam_index: int):
 async def get_adjust_roi_page(request: Request, user: user_dependency, cam_index: int):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
-    if cam_index < 1 or cam_index > len(video_captures):
+    global prev_rtsp_urls
+    if cam_index < 1 or cam_index > len(prev_rtsp_urls):
         raise HTTPException(status_code=400, detail="Invalid camera index")
     return templates.TemplateResponse("adjust_roi.html",
                                       {"user": user, "request": request, "cam_index": cam_index})
@@ -252,8 +247,8 @@ async def get_adjust_roi_page(request: Request, user: user_dependency, cam_index
 async def adjust_roi(request: Request, user: user_dependency, cam_index: int):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
-    global video_captures
-    if cam_index < 1 or cam_index > len(video_captures):
+    global prev_rtsp_urls
+    if cam_index < 1 or cam_index > len(prev_rtsp_urls):
         raise HTTPException(status_code=400, detail="Invalid camera index")
 
     form_data = await request.form()
@@ -263,9 +258,15 @@ async def adjust_roi(request: Request, user: user_dependency, cam_index: int):
     y2 = int(form_data.get("y2"))
 
     roi_settings = roi_settings_list[cam_index - 1]
-    cap = video_captures[cam_index - 1]
+    url = prev_rtsp_urls[cam_index - 1]
+    try:
+        camera_id = int(url)
+        cap = cv2.VideoCapture(camera_id)
+    except ValueError:
+        cap = cv2.VideoCapture(url)
     frame_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
     frame_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    cap.release()
 
     roi_settings.x1 = max(0, min(x1, int(frame_width) - 1))
     roi_settings.y1 = max(0, min(y1, int(frame_height) - 1))
@@ -279,15 +280,18 @@ async def adjust_roi(request: Request, user: user_dependency, cam_index: int):
 async def start_detection(request: Request, user: user_dependency):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
-    global detection_thread
-    global detection_flag
+    global detection_process
     global detection_log
+    global prev_rtsp_urls
+    global roi_settings_list
+    global last_detection_time
     msg = "Takip çoktan başladı"
-    detection_flag = True
-    if detection_thread is None or not detection_thread.is_alive():
-        detection_flag = True
-        detection_thread = threading.Thread(target=concurrent_detection)
-        detection_thread.start()
+    if detection_process is None or not detection_process.is_alive():
+        mp_shared.manager_detection_event.set()
+        detection_process = multiprocessing.Process(target=concurrent_detection,
+                                                    args=(prev_rtsp_urls, roi_settings_list, detection_log,
+                                                          last_detection_time, mp_shared.manager_detection_event))
+        detection_process.start()
         detection_log.insert(0, "Takip başladı: " + str(datetime.datetime.now()))
         msg = "Takip başladı"
     return templates.TemplateResponse("camfeed.html",
@@ -299,14 +303,13 @@ async def start_detection(request: Request, user: user_dependency):
 async def stop_detection(request: Request, user: user_dependency):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
-    global detection_thread
-    global detection_flag
+    global detection_process
     global detection_log
-    detection_flag = False
     msg = "Takip zaten çalışmıyor"
-    if detection_thread is not None and detection_thread.is_alive():
-        detection_thread.join()
-        detection_thread = None
+    if detection_process is not None and detection_process.is_alive():
+        mp_shared.manager_detection_event.clear()
+        detection_process.join()
+        detection_process = None
         detection_log.insert(0, "Takip sona erdi: " + str(datetime.datetime.now()))
         msg = "Takip sona erdi"
     return templates.TemplateResponse("camfeed.html",

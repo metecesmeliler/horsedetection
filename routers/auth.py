@@ -44,8 +44,8 @@ class LoginForm:
 
 
 def get_db():
+    db = SessionLocal()
     try:
-        db = SessionLocal()
         yield db
     finally:
         db.close()
@@ -105,7 +105,7 @@ def send_registration_email_to_admins(email: str, name: str, admin_emails):
 
 
 def get_reset_token(token: str, db: Session = Depends(get_db)):
-    return db.query(models.ResetToken).filter(models.ResetToken.token == token).first()
+    return db.query(models.ResetToken).filter_by(token=token).first()
 
 
 @router.post("/token")
@@ -168,7 +168,7 @@ async def register_user(request: Request, email: str = Form(...), name: str = Fo
                         password: str = Form(...), password2: str = Form(...),
                         db: Session = Depends(get_db)):
 
-    validation = db.query(models.Users).filter(models.Users.email == email).first()
+    validation = db.query(models.Users).filter_by(email=email).first()
 
     if password != password2 or validation is not None:
         msg = "Invalid registration request"
@@ -230,7 +230,7 @@ async def forgot_password(request: Request, current_user: dict = Depends(get_cur
     if current_user:
         return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
 
-    user = db.query(models.Users).filter(models.Users.email == email).first()
+    user = db.query(models.Users).filter(email=email).first()
     if user is None:
         msg = "Email not found"
         return templates.TemplateResponse("forgot_password.html", {"request": request, "msg": msg})

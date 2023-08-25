@@ -62,7 +62,7 @@ async def process_add_rtsp_form(request: Request, user: user_dependency, db: db_
     if not url:
         return templates.TemplateResponse("add_rtsp.html", {"request": request, "user": user})
 
-    validation = db.query(RtspUrls).filter(RtspUrls.url == url).first()
+    validation = db.query(RtspUrls).filter_by(url=url).first()
     if validation is not None:
         msg = "Bu url zaten kayıtlı"
         return templates.TemplateResponse("add_rtsp.html", {"request": request, "msg": msg, "user": user})
