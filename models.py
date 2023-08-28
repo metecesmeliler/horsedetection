@@ -1,4 +1,5 @@
 from sqlalchemy import Boolean, Column, Integer, String, Enum, ForeignKey, DateTime
+from sqlalchemy.orm import relationship
 from database import Base
 
 
@@ -8,8 +9,11 @@ class Users(Base):
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    role = Column(Enum("admin","operator"), default="operator")
+    role = Column(Enum("admin", "operator"), default="operator")
     approved = Column(Boolean, default=None)
+    last_login = Column(DateTime)
+    is_active = Column(Boolean, default=False)
+    reset_tokens = relationship("ResetToken", back_populates="user")
 
 
 class RtspUrls(Base):
@@ -25,3 +29,4 @@ class ResetToken(Base):
     token = Column(String, unique=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     expiration_date = Column(DateTime)
+    user = relationship("Users", back_populates="reset_tokens")

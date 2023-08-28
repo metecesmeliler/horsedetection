@@ -50,6 +50,8 @@
       <th scope="col" style="color: white;">Email</th>
       <th scope="col" style="color: white;">İsim Soyisim</th>
       <th scope="col" style="color: white;">Rol</th>
+      <th scope="col" style="color: white;">Son Giriş</th>
+      <th scope="col" style="color: white;">Aktivite</th>
     </tr>
   </thead>
   <tbody>
@@ -59,6 +61,20 @@
         <td>{{ admin.email }}</td>
         <td>{{ admin.name }}</td>
         <td>{{ admin.role }}</td>
+        <td>
+          {% if admin.last_login %}
+            {{ admin.last_login }}
+          {% else %}
+            -
+          {% endif %}
+        </td>
+        <td>
+          {% if admin.is_active %}
+            <span style="color: green; font-size: 20px;">&#x25CF;</span> <!-- Green circle -->
+          {% else %}
+            <span style="color: red; font-size: 20px;">&#x25CF;</span> <!-- Red circle -->
+          {% endif %}
+        </td>
       </tr>
     {% endfor %}
   </tbody>
@@ -75,6 +91,8 @@
       <th scope="col" style="color: white;">Email</th>
       <th scope="col" style="color: white;">İsim Soyisim</th>
       <th scope="col" style="color: white;">Rol</th>
+      <th scope="col" style="color: white;">Son Giriş</th>
+      <th scope="col" style="color: white;">Aktivite</th>
       <th scope="col" style="color: white;">İşlemler</th>
     </tr>
   </thead>
@@ -85,6 +103,20 @@
         <td>{{ operator.email }}</td>
         <td>{{ operator.name }}</td>
         <td>{{ operator.role }}</td>
+        <td>
+          {% if operator.last_login %}
+            {{ operator.last_login }}
+          {% else %}
+            -
+          {% endif %}
+        </td>
+        <td>
+          {% if operator.is_active %}
+            <span style="color: green; font-size: 20px;">&#x25CF;</span> <!-- Green circle -->
+          {% else %}
+            <span style="color: red; font-size: 20px;">&#x25CF;</span> <!-- Red circle -->
+          {% endif %}
+        </td>
         <td>
             {% if operator.name in pending_operators %}
               <form class="d-inline-block" method="post" action="/admin/approve_operator/{{ operator.id }}">

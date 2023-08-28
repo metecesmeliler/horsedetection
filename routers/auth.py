@@ -1,19 +1,27 @@
-import secrets
-import sys
-from starlette.responses import RedirectResponse
 from fastapi import Depends, HTTPException, status, APIRouter, Request, Response, Form
-from typing import Optional
-import models
-from email_utils import send_email
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse
+from starlette.responses import RedirectResponse
 from passlib.context import CryptContext
+from datetime import datetime, timedelta
+from email_utils import send_email
 from sqlalchemy.orm import Session
 from database import SessionLocal
-from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
-from datetime import datetime, timedelta
 from jose import jwt, JWTError
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from typing import Optional
+import logging
+import secrets
+import models
+import sys
 sys.path.append("..")
+
+
+router = APIRouter(
+    prefix="/auth",
+    tags=["auth"],
+    responses={401: {"user": "Not authorized"}}
+)
 
 
 SECRET_KEY = "KlgH6AzYDeZeGwD288to79I3vTHT8wp7"
@@ -22,13 +30,6 @@ ALGORITHM = "HS256"
 templates = Jinja2Templates(directory="templates")
 bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_bearer = OAuth2PasswordBearer(tokenUrl="token")
-
-
-router = APIRouter(
-    prefix="/auth",
-    tags=["auth"],
-    responses={401: {"user": "Not authorized"}}
-)
 
 
 class LoginForm:
@@ -108,6 +109,15 @@ def get_reset_token(token: str, db: Session = Depends(get_db)):
     return db.query(models.ResetToken).filter_by(token=token).first()
 
 
+def mark_inactive_users():
+    with SessionLocal() as db:
+        inactive_threshold = datetime.now() - timedelta(minutes=60)
+        inactive_users = db.query(models.Users).filter(models.Users.last_login < inactive_threshold).all()
+        for user in inactive_users:
+            user.is_active = False
+            db.commit()
+
+
 @router.post("/token")
 async def login_for_access_token(response: Response, form_data: OAuth2PasswordRequestForm = Depends(),
                                  db: Session = Depends(get_db)):
@@ -115,11 +125,11 @@ async def login_for_access_token(response: Response, form_data: OAuth2PasswordRe
     if not user:
         return False
     token_expires = timedelta(minutes=60)
-    token = create_access_token(user.email, user.id, user.role,
-                                expires_delta=token_expires)
-
+    token = create_access_token(user.email, user.id, user.role, expires_delta=token_expires)
+    user.last_login = datetime.now()
+    user.is_active = True
+    db.commit()
     response.set_cookie(key="access_token", value=token, httponly=True)
-
     return True
 
 
@@ -138,7 +148,6 @@ async def login(request: Request, db: Session = Depends(get_db)):
         response = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
 
         validate_user_cookie = await login_for_access_token(response=response, form_data=form, db=db)
-
         if not validate_user_cookie:
             msg = "Incorrect Email or Password or User not Approved Yet"
             return templates.TemplateResponse("login.html", {"request": request, "msg": msg})
@@ -149,7 +158,13 @@ async def login(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/logout")
-async def logout(request: Request):
+async def logout(request: Request, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    user_id = current_user['id']
+    if user_id:
+        user = db.query(models.Users).get(user_id)
+        if user:
+            user.is_active = False
+            db.commit()
     msg = "Logout Successful"
     response = templates.TemplateResponse("login.html", {"request": request, "msg": msg})
     response.delete_cookie(key="access_token")
@@ -230,7 +245,7 @@ async def forgot_password(request: Request, current_user: dict = Depends(get_cur
     if current_user:
         return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
 
-    user = db.query(models.Users).filter(email=email).first()
+    user = db.query(models.Users).filter_by(email=email).first()
     if user is None:
         msg = "Email not found"
         return templates.TemplateResponse("forgot_password.html", {"request": request, "msg": msg})
