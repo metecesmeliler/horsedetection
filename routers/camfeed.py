@@ -33,18 +33,19 @@ def get_db():
         db.close()
 
 
+# Global variables, and lists; user, and database dependencies
 db_dependency = Annotated[Session, Depends(get_db)]
 user_dependency = Annotated[dict, Depends(get_current_user)]
 futures = []
 prev_rtsp_urls = []
 roi_settings_list = []
 email_list = []
-detection_log = []
 num_cameras = 0
 detection_process = None
 last_detection_time = datetime.datetime.min
 
 
+# Class declaration for Region of Interest Settings
 class RoiSettings:
     def __init__(self, x1=0, y1=0, x2=0, y2=0):
         self.x1 = x1
@@ -53,6 +54,7 @@ class RoiSettings:
         self.y2 = y2
 
 
+# Function for sending email
 def send_detection_email(cam_id):
     global email_list
     subject = "At Arabası Takip Sistemi: At Arabası Algılandı"
@@ -65,6 +67,7 @@ def send_detection_email(cam_id):
             print(f"An exception occurred in send_email: {e}")
 
 
+# Generator function that generates frames
 def generate_frames(cap, roi_settings):
     try:
         while True:
@@ -82,6 +85,7 @@ def generate_frames(cap, roi_settings):
         print(f"An exception occurred in stream_video: {e}")
 
 
+# Object detection function that creates the Mediapipe model
 def detect_objects(url, thread_id, roi_settings, detection_logs, detection_time_last, detection_event):
     print("Inside detect_objects")
     last_timestamp_ms = None
@@ -120,8 +124,8 @@ def detect_objects(url, thread_id, roi_settings, detection_logs, detection_time_
                         current_time = datetime.datetime.now()
                         if (current_time - detection_time_last).total_seconds() >= 60:
                             detection_time_last = current_time
-                            detection_logs.insert(0, "At algılandı! Kamera " + str(thread_id) + ": "
-                                                  + str(datetime.datetime.now()))
+                            detection_logs.put("At algılandı! Kamera " + str(thread_id) + ": "
+                                               + str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
                     except Exception as exc:
                         print(f"An exception occurred in print_result {thread_id}: {exc}")
                 print(f'  Category Score: {category_score}')
@@ -164,6 +168,7 @@ def detect_objects(url, thread_id, roi_settings, detection_logs, detection_time_
         print(f"An exception occurred in thread {thread_id}: {e}")
 
 
+# Function that creates a multiprocessing pool for concurrent object detection
 def concurrent_detection(prev_rtsp_url_list, roi_setting_list, detection_logs, detection_time_last, detection_event):
     try:
         with multiprocessing.Pool(processes=len(prev_rtsp_url_list)) as pool:
@@ -182,15 +187,16 @@ def concurrent_detection(prev_rtsp_url_list, roi_setting_list, detection_logs, d
         async_results.clear()
 
 
+# Generator function that generates detection log message
 def generate_detection_log():
-    global detection_log
-    if detection_log:
-        latest_message = detection_log[0]
+    if mp_shared.manager_queue:
+        latest_message = mp_shared.manager_queue.get()
         yield f"data: {latest_message}\n\n"
     else:
         return None
 
 
+# '/' endpoint that fetches urls from database and renders camfeed.html template
 @router.get("/", response_class=HTMLResponse)
 async def camfeed(user: user_dependency, db: db_dependency, request: Request):
     if user is None:
@@ -214,6 +220,7 @@ async def camfeed(user: user_dependency, db: db_dependency, request: Request):
                                       {"request": request, "num_cameras": num_cameras, "user": user})
 
 
+# '/stream_camera/{cam_index}' endpoint that gets video captures from urls and returns streaming response
 @router.get("/stream_camera/{cam_index}")
 async def stream_camera(user: user_dependency, cam_index: int):
     if user is None:
@@ -232,6 +239,7 @@ async def stream_camera(user: user_dependency, cam_index: int):
     return StreamingResponse(generate_frames(cap, roi_settings), media_type="multipart/x-mixed-replace;boundary=frame")
 
 
+# '/adjust_roi/{cam_index}' (get) endpoint that gets the adjust roi page
 @router.get("/adjust_roi/{cam_index}", response_class=HTMLResponse)
 async def get_adjust_roi_page(request: Request, user: user_dependency, cam_index: int):
     if user is None:
@@ -243,6 +251,7 @@ async def get_adjust_roi_page(request: Request, user: user_dependency, cam_index
                                       {"user": user, "request": request, "cam_index": cam_index})
 
 
+# '/adjust_roi/{cam_index}' (post) endpoint that gets the form information and creates a roi_settings object
 @router.post("/adjust_roi/{cam_index}")
 async def adjust_roi(request: Request, user: user_dependency, cam_index: int):
     if user is None:
@@ -276,12 +285,12 @@ async def adjust_roi(request: Request, user: user_dependency, cam_index: int):
     return RedirectResponse(url="/camfeed", status_code=303)
 
 
+# '/start_detection' endpoint that starts object detection by calling concurrent_detection function (multiprocessing)
 @router.post("/start_detection", response_class=HTMLResponse)
 async def start_detection(request: Request, user: user_dependency):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
     global detection_process
-    global detection_log
     global prev_rtsp_urls
     global roi_settings_list
     global last_detection_time
@@ -289,34 +298,33 @@ async def start_detection(request: Request, user: user_dependency):
     if detection_process is None or not detection_process.is_alive():
         mp_shared.manager_detection_event.set()
         detection_process = multiprocessing.Process(target=concurrent_detection,
-                                                    args=(prev_rtsp_urls, roi_settings_list, detection_log,
-                                                          last_detection_time, mp_shared.manager_detection_event))
+                                                    args=(prev_rtsp_urls, roi_settings_list, mp_shared.manager_queue,
+                                                          last_detection_time, mp_shared.manager_detection_event,))
         detection_process.start()
-        detection_log.insert(0, "Takip başladı: " + str(datetime.datetime.now()))
         msg = "Takip başladı"
     return templates.TemplateResponse("camfeed.html",
                                       {"request": request, "num_cameras": num_cameras,
-                                       "user": user, "msg": msg, "detection_log": detection_log})
+                                       "user": user, "msg": msg})
 
 
+# '/stop_detection' endpoint that ends object detection
 @router.post("/stop_detection", response_class=HTMLResponse)
 async def stop_detection(request: Request, user: user_dependency):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
     global detection_process
-    global detection_log
     msg = "Takip zaten çalışmıyor"
     if detection_process is not None and detection_process.is_alive():
         mp_shared.manager_detection_event.clear()
         detection_process.join()
         detection_process = None
-        detection_log.insert(0, "Takip sona erdi: " + str(datetime.datetime.now()))
         msg = "Takip sona erdi"
     return templates.TemplateResponse("camfeed.html",
                                       {"request": request, "num_cameras": num_cameras,
-                                       "user": user, "msg": msg, "detection_log": detection_log})
+                                       "user": user, "msg": msg})
 
 
+# '/get_detection_log' endpoint that returns streaming response for the detection log (Server-Sent Events)
 @router.get("/get_detection_log")
 async def get_detection_log_sse():
     return StreamingResponse(generate_detection_log(), media_type="text/event-stream")

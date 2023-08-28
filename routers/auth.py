@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 from jose import jwt, JWTError
 from typing import Optional
-import logging
 import secrets
 import models
 import sys

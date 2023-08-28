@@ -47,14 +47,14 @@
     <div class="col-md-6">
       <h5 style="color: white;">Kamera {{ cam_index }}</h5>
       <div class="video-container">
-        <img src="{{ '/camfeed/stream_camera/' ~ cam_index }}" alt="Camera Feed" style="border: 4px solid lightslategray">
+        <img src="{{ '/camfeed/stream_camera/' ~ cam_index }}" alt="Camera Feed"
+             style="border: 4px solid lightslategray; max-width: 100%;">
       </div>
       <p class="space-cam"></p>
       <div class="button-container">
         <a href="{{ '/camfeed/adjust_roi/' ~ cam_index }}" class="btn btn-primary">ROI Ayarla</a>
       </div>
     </div>
-
   {% endfor %}
 </div>
 <script>
