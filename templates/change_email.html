@@ -1,0 +1,24 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<title>At Arabası Takip Sistemi Email Değiştirme</title>
+<div class="center-content">
+<h3 style="color: white;">Email Değiştirme</h3>
+</div>
+<p class="space"></p>
+{% if msg %}
+<div class="mt-3 alert alert-danger">
+    {{ msg }}
+</div>
+{% endif %}
+<div class="jumbotron text-center custom-jumbotron">
+<form method="post" action="/auth/change_email">
+    <div class="form-group offset-3 col-md-6">
+        <label for="email"><strong>Yeni Email Adresi</strong></label>
+        <input type="email" class="form-control bordered-input" id="email" name="email" placeholder="Yeni Email adresini giriniz" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Değiştirme Linki Yolla</button>
+</form>
+</div>
+
+{% endblock %}

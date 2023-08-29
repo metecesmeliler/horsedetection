@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status, APIRouter, Request, Response, Form
+from fastapi import Depends, HTTPException, status, APIRouter, Request, Response, Form, Query
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
@@ -9,7 +9,7 @@ from email_utils import send_email
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from jose import jwt, JWTError
-from typing import Optional
+from typing import Optional, Annotated
 import secrets
 import models
 import sys
@@ -289,3 +289,59 @@ async def reset_password(request: Request, token: str, new_password: str = Form(
 
     msg = "Şifre başarıyla değiştirildi."
     return templates.TemplateResponse("login.html", {"request": request, "msg": msg})
+
+
+@router.get("/change_email", response_class=HTMLResponse)
+async def change_email_page(request: Request, current_user: dict = Depends(get_current_user)):
+    if not current_user:
+        raise HTTPException(status_code=401, detail='Authentication Failed')
+    return templates.TemplateResponse("change_email.html", {"request": request, "user": current_user})
+
+
+@router.post("/change_email", response_class=HTMLResponse)
+async def change_email(request: Request, current_user: dict = Depends(get_current_user),
+                       email: str = Form(...), db: Session = Depends(get_db)):
+    if not current_user:
+        raise HTTPException(status_code=401, detail='Authentication Failed')
+
+    user = db.query(models.Users).filter_by(email=email).first()
+    if user:
+        msg = "Bu Email adresini kullanamazsınız."
+        return templates.TemplateResponse("change_email.html", {"request": request, "msg": msg})
+
+    token = secrets.token_urlsafe(32)
+    expiration = datetime.utcnow() + timedelta(minutes=5)
+    reset_token = models.ResetToken(token=token, user_id=current_user["id"], expiration_date=expiration)
+    db.add(reset_token)
+    db.commit()
+
+    reset_link = f"http://127.0.0.1:8000/auth/change_email/{reset_token.token}?email={email}"
+    subject = "At Arabası Takip Sistemi: Email Değiştirme"
+    html_content = (f"<p>Email adresinizi değiştirmek için linke tıklayın: "
+                    f"<a href='{reset_link}'>Şifreyi Resetle</a><br>"
+                    f"Eğer böyle bir istekte bulunmadıysanız bu mesajı görmezden gelin.</p>")
+    plain_content = (f"Şifrenizi resetlemek linke gidin: {reset_link}\n"
+                     f"Eğer böyle bir istekte bulunmadıysanız bu mesajı görmezden gelin.")
+    send_email(email, html_content, plain_content, subject)
+
+    return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/change_email/{token}", response_class=HTMLResponse)
+async def change_email_confirm(request: Request, token: str, email: str = Query(...),
+                               current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user:
+        raise HTTPException(status_code=401, detail='Authentication Failed')
+
+    reset_token = get_reset_token(token, db)
+    if not reset_token or reset_token.expiration_date < datetime.utcnow():
+        msg = "Email değiştirme süresi geçti."
+        return templates.TemplateResponse("home.html", {"request": request, "msg": msg, "user": current_user})
+
+    user = db.query(models.Users).filter_by(id=current_user["id"]).first()
+    if user:
+        user.email = email
+        db.delete(reset_token)
+        db.commit()
+
+    return RedirectResponse(url="/user", status_code=status.HTTP_302_FOUND)

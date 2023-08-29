@@ -6,13 +6,16 @@
 <h3 style="color: white;">Kullanıcı Bilgisi</h3>
 </div>
 <p class="space"></p>
-<div class="jumbotron text-center custom-jumbotron-white">
+<div class="jumbotron custom-jumbotron-white">
     <p><strong>Email:</strong> {{ user_info.email }}</p>
     <p><strong>İsim Soyisim:</strong> {{ user_info.name }}</p>
-    <p><strong>Role:</strong> {{ user_info.role }}</p>
-    <div class="button-container">
+    <p><strong>Rol:</strong> {{ user_info.role }}</p>
+    <p><strong>Son Giriş:</strong> {{ user_info.last_login.strftime('%Y-%m-%d %H:%M') }}</p>
+    <div class="button-container d-inline-block">
         <a href="/auth/change_password" class="btn btn-primary">Şifre Değiştir</a>
     </div>
+    <div class="button-container d-inline-block">
+        <a href="/auth/change_email" class="btn btn-primary">Email Değiştir</a>
+    </div>
 </div>
-
 {% endblock %}
