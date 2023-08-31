@@ -14,9 +14,11 @@
                     <li class="nav-item active">
                         <a class="nav-link" href="/user">Kullanıcı Paneli </a>
                     </li>
-                    <li class="nav-item active">
-                        <a class="nav-link" href="/admin">Admin Paneli </a>
-                    </li>
+                    {% if user.role == 'admin' %}
+                        <li class="nav-item active">
+                            <a class="nav-link" href="/admin">Admin Paneli </a>
+                        </li>
+                    {% endif %}
                 {% endif %}
             </ul>
             <ul class="navbar-nav ml-auto">
