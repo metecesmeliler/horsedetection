@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from starlette.responses import StreamingResponse
 from fastapi.templating import Jinja2Templates
 from routers.auth import get_current_user
@@ -36,13 +36,11 @@ def get_db():
 # Global variables, and lists; user, and database dependencies
 db_dependency = Annotated[Session, Depends(get_db)]
 user_dependency = Annotated[dict, Depends(get_current_user)]
-futures = []
 prev_rtsp_urls = []
 roi_settings_list = []
 email_list = []
 num_cameras = 0
 detection_process = None
-last_detection_time = datetime.datetime.min
 
 
 # Class declaration for Region of Interest Settings
@@ -86,12 +84,14 @@ def generate_frames(cap, roi_settings):
 
 
 # Object detection function that creates the Mediapipe model
-def detect_objects(url, thread_id, roi_settings, detection_logs, detection_time_last, detection_event):
+def detect_objects(url, process_id, roi_settings, detection_logs, detection_event):
     print("Inside detect_objects")
     last_timestamp_ms = None
     detection_time_last = datetime.datetime.min
     try:
+        # faster
         # model_path = r'C:\Documents\efficientdet_lite0.tflite'
+        # more accuracy
         model_path = r'C:\Documents\efficientdet_lite2.tflite'
         BaseOptions = mp.tasks.BaseOptions
         DetectionResult = mp.tasks.components.containers.DetectionResult
@@ -103,7 +103,7 @@ def detect_objects(url, thread_id, roi_settings, detection_logs, detection_time_
             nonlocal detection_time_last
             nonlocal detection_logs
             for i, detection in enumerate(result.detections):
-                print(f'Thread: {thread_id} Detection #{i + 1}:')
+                print(f'Process: {process_id} Detection #{i + 1}:')
 
                 bounding_box = detection.bounding_box
                 box_width = bounding_box.width
@@ -119,15 +119,14 @@ def detect_objects(url, thread_id, roi_settings, detection_logs, detection_time_
                     print("###################### Horse detected ######################")
                 elif category_name == 'person':
                     print("********************** Person Detected **********************")
-                elif category_name == 'clock':
                     try:
                         current_time = datetime.datetime.now()
-                        if (current_time - detection_time_last).total_seconds() >= 60:
+                        if (current_time - detection_time_last).total_seconds() >= 15:
                             detection_time_last = current_time
-                            detection_logs.put("At algılandı! Kamera " + str(thread_id) + ": "
+                            detection_logs.put("İnsan algılandı! Kamera " + str(process_id) + ": "
                                                + str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
                     except Exception as exc:
-                        print(f"An exception occurred in print_result {thread_id}: {exc}")
+                        print(f"An exception occurred in print_result {process_id}: {exc}")
                 print(f'  Category Score: {category_score}')
                 print(f'  Category Name: {category_name}')
                 print()
@@ -165,19 +164,19 @@ def detect_objects(url, thread_id, roi_settings, detection_logs, detection_time_
                 detector.detect_async(mp_image, frame_timestamp_ms)
 
     except Exception as e:
-        print(f"An exception occurred in thread {thread_id}: {e}")
+        print(f"An exception occurred in process {process_id}: {e}")
 
 
-# Function that creates a multiprocessing pool for concurrent object detection
-def concurrent_detection(prev_rtsp_url_list, roi_setting_list, detection_logs, detection_time_last, detection_event):
+# Function that creates a multiprocessing pool for parallel object detection
+def concurrent_detection(prev_rtsp_url_list, roi_setting_list, detection_logs, detection_event):
     try:
         with multiprocessing.Pool(processes=len(prev_rtsp_url_list)) as pool:
             async_results = []
-            for url, thread_id in zip(prev_rtsp_url_list, range(len(prev_rtsp_url_list))):
-                roi_settings = roi_setting_list[thread_id]
+            for url, process_id in zip(prev_rtsp_url_list, range(len(prev_rtsp_url_list))):
+                roi_settings = roi_setting_list[process_id]
                 async_result = pool.apply_async(detect_objects,
-                                                args=(url, thread_id + 1, roi_settings,
-                                                      detection_logs, detection_time_last, detection_event))
+                                                args=(url, process_id + 1, roi_settings,
+                                                      detection_logs, detection_event))
                 async_results.append(async_result)
             for async_result in async_results:
                 async_result.get()
@@ -286,42 +285,39 @@ async def adjust_roi(request: Request, user: user_dependency, cam_index: int):
 
 
 # '/start_detection' endpoint that starts object detection by calling concurrent_detection function (multiprocessing)
-@router.post("/start_detection", response_class=HTMLResponse)
+@router.post("/start_detection", response_class=JSONResponse)
 async def start_detection(request: Request, user: user_dependency):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
     global detection_process
     global prev_rtsp_urls
     global roi_settings_list
-    global last_detection_time
-    msg = "Takip çoktan başladı"
+    msg = "Takip zaten çalışıyor"
     if detection_process is None or not detection_process.is_alive():
         mp_shared.manager_detection_event.set()
         detection_process = multiprocessing.Process(target=concurrent_detection,
                                                     args=(prev_rtsp_urls, roi_settings_list, mp_shared.manager_queue,
-                                                          last_detection_time, mp_shared.manager_detection_event,))
+                                                          mp_shared.manager_detection_event,))
         detection_process.start()
-        msg = "Takip başladı"
-    return templates.TemplateResponse("camfeed.html",
-                                      {"request": request, "num_cameras": num_cameras,
-                                       "user": user, "msg": msg})
+        msg = None
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    return {"timestamp": timestamp, "warning": msg}
 
 
 # '/stop_detection' endpoint that ends object detection
-@router.post("/stop_detection", response_class=HTMLResponse)
+@router.post("/stop_detection", response_class=JSONResponse)
 async def stop_detection(request: Request, user: user_dependency):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
     global detection_process
-    msg = "Takip zaten çalışmıyor"
+    msg = "Takip zaten sona erdi!"
     if detection_process is not None and detection_process.is_alive():
         mp_shared.manager_detection_event.clear()
         detection_process.join()
         detection_process = None
-        msg = "Takip sona erdi"
-    return templates.TemplateResponse("camfeed.html",
-                                      {"request": request, "num_cameras": num_cameras,
-                                       "user": user, "msg": msg})
+        msg = None
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    return {"timestamp": timestamp, "warning": msg}
 
 
 # '/get_detection_log' endpoint that returns streaming response for the detection log (Server-Sent Events)

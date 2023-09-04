@@ -6,21 +6,7 @@
   <h3 style="color: white;">Kameralar</h3>
 </div>
 <p class="space"></p>
-{% if msg %}
-{% if msg == 'Takip başladı' %}
-<div class="mt-3 alert alert-success">
-    {{ msg }}
-</div>
-{% elif msg == 'Takip sona erdi' %}
-<div class="mt-3 alert alert-danger">
-    {{ msg }}
-</div>
-{% else %}
-<div class="mt-3 alert alert-secondary">
-    {{ msg }}
-</div>
-{% endif %}
-{% endif %}
+<div class="warning-message alert alert-warning" role="alert"></div>
 <div style="text-align: center;">
   <div style="display: inline-block; margin: 0 10px;">
     <form action="/camfeed/start_detection/" method="post">
@@ -33,7 +19,7 @@
     </form>
   </div>
 </div>
-<div class="detection-log-panel">
+<div class="detection-log-panel" hidden>
   <h4 class="log-header" style="color: white;">Takip Kaydı</h4>
   <div class="log-scroll-container">
     <ul class="log-list">
@@ -61,16 +47,104 @@
     const eventSource = new EventSource('/camfeed/get_detection_log');
     const logList = document.querySelector('.log-list');
     let latestDisplayedMessage = null;
+    const detectionLogPanel = document.querySelector('.detection-log-panel');
+    const warningMessage = document.querySelector('.warning-message'); // Add a placeholder for warning messages in your HTML
 
-    eventSource.onmessage = function(event) {
-        const newLogEntry = document.createElement('li');
-        newLogEntry.className = 'log-entry';
-        newLogEntry.textContent = event.data;
+    eventSource.onmessage = function (event) {
+    const newLogEntry = document.createElement('li');
+    newLogEntry.className = 'log-entry';
+    newLogEntry.textContent = event.data;
 
-        if (event.data !== latestDisplayedMessage) {
-            logList.prepend(newLogEntry);
-            latestDisplayedMessage = event.data;
+      if (event.data !== latestDisplayedMessage) {
+        logList.prepend(newLogEntry);
+        latestDisplayedMessage = event.data;
         }
     };
+
+    // Function to show the detection log panel
+    function showDetectionLogPanel() {
+      detectionLogPanel.removeAttribute('hidden');
+    }
+
+    // Function to hide the detection log panel
+    function hideDetectionLogPanel() {
+      detectionLogPanel.setAttribute('hidden', true);
+    }
+
+    // Function to add a log entry for detection start or end
+    function addDetectionLogEntry(message) {
+      const timestamp = new Date().toLocaleString();
+      const formattedMessage = `${message} ${timestamp}`;
+      const newLogEntry = document.createElement('li');
+      newLogEntry.className = 'log-entry';
+      newLogEntry.textContent = formattedMessage;
+      logList.prepend(newLogEntry);
+    }
+
+    // Function to display a warning message and automatically hide it after 5 seconds
+    function displayWarning(message) {
+      warningMessage.textContent = message;
+      warningMessage.classList.add('show'); // Add the 'show' class to display the alert
+      setTimeout(function () {
+      warningMessage.textContent = '';
+      warningMessage.classList.remove('show'); // Remove the 'show' class to hide the alert
+      }, 5000); // 5000 milliseconds (5 seconds)
+    }
+
+    // Add event listeners to the start and stop detection buttons
+    const startDetectionButton = document.querySelector('form[action="/camfeed/start_detection/"]');
+    const stopDetectionButton = document.querySelector('form[action="/camfeed/stop_detection/"]');
+
+    startDetectionButton.addEventListener('submit', function (event) {
+      event.preventDefault(); // Prevent the form from submitting
+
+      // Send an AJAX request to start detection
+      fetch('/camfeed/start_detection/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json', // Adjust the content type if needed
+      },
+      })
+      .then(response => response.json())
+      .then(data => {
+        // Handle the response
+        console.log(data);
+        if (data.warning) {
+          displayWarning(data.warning);
+        } else {
+          showDetectionLogPanel();
+          addDetectionLogEntry('Detection started!');
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+      });
+    });
+
+    stopDetectionButton.addEventListener('submit', function (event) {
+      event.preventDefault(); // Prevent the form from submitting
+
+      // Send an AJAX request to stop detection
+      fetch('/camfeed/stop_detection/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json', // Adjust the content type if needed
+      },
+      })
+      .then(response => response.json())
+      .then(data => {
+        // Handle the response
+        console.log(data);
+        if (data.warning) {
+          displayWarning(data.warning);
+        } else {
+          hideDetectionLogPanel();
+          addDetectionLogEntry('Detection ended!');
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+      });
+    });
 </script>
 {% endblock %}
