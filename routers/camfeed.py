@@ -246,8 +246,18 @@ async def get_adjust_roi_page(request: Request, user: user_dependency, cam_index
     global prev_rtsp_urls
     if cam_index < 1 or cam_index > len(prev_rtsp_urls):
         raise HTTPException(status_code=400, detail="Invalid camera index")
+    url = prev_rtsp_urls[cam_index - 1]
+    try:
+        camera_id = int(url)
+        cap = cv2.VideoCapture(camera_id)
+    except ValueError:
+        cap = cv2.VideoCapture(url)
+    frame_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+    frame_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    cap.release()
     return templates.TemplateResponse("adjust_roi.html",
-                                      {"user": user, "request": request, "cam_index": cam_index})
+                                      {"user": user, "request": request, "cam_index": cam_index,
+                                       "frame_width": frame_width, "frame_height": frame_height})
 
 
 # '/adjust_roi/{cam_index}' (post) endpoint that gets the form information and creates a roi_settings object

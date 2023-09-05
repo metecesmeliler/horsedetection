@@ -48,7 +48,7 @@
     const logList = document.querySelector('.log-list');
     let latestDisplayedMessage = null;
     const detectionLogPanel = document.querySelector('.detection-log-panel');
-    const warningMessage = document.querySelector('.warning-message'); // Add a placeholder for warning messages in your HTML
+    const warningMessage = document.querySelector('.warning-message');
 
     eventSource.onmessage = function (event) {
     const newLogEntry = document.createElement('li');
@@ -61,17 +61,14 @@
         }
     };
 
-    // Function to show the detection log panel
     function showDetectionLogPanel() {
       detectionLogPanel.removeAttribute('hidden');
     }
 
-    // Function to hide the detection log panel
     function hideDetectionLogPanel() {
       detectionLogPanel.setAttribute('hidden', true);
     }
 
-    // Function to add a log entry for detection start or end
     function addDetectionLogEntry(message) {
       const timestamp = new Date().toLocaleString();
       const formattedMessage = `${message} ${timestamp}`;
@@ -81,28 +78,25 @@
       logList.prepend(newLogEntry);
     }
 
-    // Function to display a warning message and automatically hide it after 5 seconds
     function displayWarning(message) {
       warningMessage.textContent = message;
-      warningMessage.classList.add('show'); // Add the 'show' class to display the alert
+      warningMessage.classList.add('show');
       setTimeout(function () {
       warningMessage.textContent = '';
-      warningMessage.classList.remove('show'); // Remove the 'show' class to hide the alert
-      }, 5000); // 5000 milliseconds (5 seconds)
+      warningMessage.classList.remove('show');
+      }, 5000);
     }
 
-    // Add event listeners to the start and stop detection buttons
     const startDetectionButton = document.querySelector('form[action="/camfeed/start_detection/"]');
     const stopDetectionButton = document.querySelector('form[action="/camfeed/stop_detection/"]');
 
     startDetectionButton.addEventListener('submit', function (event) {
-      event.preventDefault(); // Prevent the form from submitting
+      event.preventDefault();
 
-      // Send an AJAX request to start detection
       fetch('/camfeed/start_detection/', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json', // Adjust the content type if needed
+        'Content-Type': 'application/json',
       },
       })
       .then(response => response.json())
@@ -122,18 +116,16 @@
     });
 
     stopDetectionButton.addEventListener('submit', function (event) {
-      event.preventDefault(); // Prevent the form from submitting
+      event.preventDefault();
 
-      // Send an AJAX request to stop detection
       fetch('/camfeed/stop_detection/', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json', // Adjust the content type if needed
+        'Content-Type': 'application/json',
       },
       })
       .then(response => response.json())
       .then(data => {
-        // Handle the response
         console.log(data);
         if (data.warning) {
           displayWarning(data.warning);
