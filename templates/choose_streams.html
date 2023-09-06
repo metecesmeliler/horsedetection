@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<title>At Arabası Takip Sistemi Yayın Şeç</title>
+<div class="center-content">
+<h3 style="color: white;">Kameralar</h3>
+</div>
+<p class="space"></p>
+<table class="table custom-table">
+  <thead>
+    <tr>
+      <th scope="col" style="color: white;">#</th>
+      <th scope="col" style="color: white;">Kamera URL</th>
+      <th scope="col" style="color: white;">Yayın Durumu</th>
+      <th scope="col" style="color: white;">İşlemler</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for entry in rtsp_urls %}
+      <tr>
+        <th scope="row">{{ loop.index }}</th>
+        <td>{{ entry.url }}</td>
+        <td>
+          {% if  entry.status %}
+            <span class="circle-icon" style="color: #009600">&#x2B24;</span>
+          {% else %}
+            <span class="circle-icon" style="color: #cb0000">&#x2B24;</span>
+          {% endif %}
+        </td>
+        <td>
+          <form class="d-inline-block" method="post" action="/camfeed/display_stream/{{ loop.index }}">
+            <button type="submit" class="btn btn-success">Göster</button>
+          </form>
+          <form class="d-inline-block" method="post" action="/camfeed/hide_stream/{{ loop.index }}">
+            <button type="submit" class="btn btn-danger">Sakla</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="text-center">
+  <a href="/camfeed" class="btn btn-primary">Kaydet ve Geri Dön</a>
+</div>
+{% endblock %}

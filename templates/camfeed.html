@@ -2,6 +2,7 @@
 
 {% block content %}
 <title>At Arabası Takip Sistemi Kameralar</title>
+
 <div class="center-content">
   <h3 style="color: white;">Kameralar</h3>
 </div>
@@ -18,6 +19,11 @@
       <button type="submit" class="btn btn-danger">Takibi Bitir</button>
     </form>
   </div>
+  <div style="margin-top: 10px;">
+    <form action="/camfeed/choose_streams/" method="get">
+      <button type="submit" class="btn btn-primary">Yayın Şeç</button>
+    </form>
+  </div>
 </div>
 <div class="detection-log-panel" hidden>
   <h4 class="log-header" style="color: white;">Takip Kaydı</h4>
@@ -29,20 +35,24 @@
 <p class="space-cam"></p>
 <p class="space-cam"></p>
 <div class="row">
-  {% for cam_index in range(1, num_cameras + 1) %}
-    <div class="col-md-6">
-      <h5 style="color: white;">Kamera {{ cam_index }}</h5>
-      <div class="video-container">
-        <img src="{{ '/camfeed/stream_camera/' ~ cam_index }}" alt="Camera Feed"
-             style="border: 4px solid lightslategray; max-width: 100%;">
-      </div>
-      <p class="space-cam"></p>
-      <div class="button-container">
-        <a href="{{ '/camfeed/adjust_roi/' ~ cam_index }}" class="btn btn-primary">ROI Ayarla</a>
-      </div>
-    </div>
+  {% for camera_info in display_list %}
+    {% if camera_info.status %}
+        <div class="col-md-6">
+            <h5 style="color: white;">Kamera {{ loop.index }}</h5>
+            <div class="video-container">
+                <img src="{{ '/camfeed/stream_camera/' ~ loop.index }}" alt="Camera Feed"
+                     style="border: 4px solid lightslategray; max-width: 100%;">
+                <button class="fullscreen-button" onclick="toggleFullscreen(this)">&#x26F6;</button>
+            </div>
+            <p class="space-cam"></p>
+            <div class="button-container">
+                <a href="{{ '/camfeed/adjust_roi/' ~ loop.index }}" class="btn btn-primary">ROI Ayarla</a>
+            </div>
+        </div>
+    {% endif %}
   {% endfor %}
 </div>
+
 <script>
     const eventSource = new EventSource('/camfeed/get_detection_log');
     const logList = document.querySelector('.log-list');
@@ -138,5 +148,27 @@
         console.error('Error:', error);
       });
     });
+
+    function toggleFullscreen(button) {
+      const videoContainer = button.parentElement;
+      if (!document.fullscreenElement) {
+        if (videoContainer.requestFullscreen) {
+          videoContainer.requestFullscreen();
+        }
+
+        button.innerHTML = '&#x26F6;';
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+
+        button.innerHTML = '&#x26F6;';
+      }
+    }
+
+    $(document).ready(function() {
+      $('[data-toggle="tooltip"]').tooltip();
+    });
+
 </script>
 {% endblock %}

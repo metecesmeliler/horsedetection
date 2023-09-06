@@ -37,6 +37,7 @@ def get_db():
 db_dependency = Annotated[Session, Depends(get_db)]
 user_dependency = Annotated[dict, Depends(get_current_user)]
 prev_rtsp_urls = []
+display_list = []
 roi_settings_list = []
 email_list = []
 num_cameras = 0
@@ -168,11 +169,11 @@ def detect_objects(url, process_id, roi_settings, detection_logs, detection_even
 
 
 # Function that creates a multiprocessing pool for parallel object detection
-def concurrent_detection(prev_rtsp_url_list, roi_setting_list, detection_logs, detection_event):
+def concurrent_detection(active_urls, roi_setting_list, detection_logs, detection_event):
     try:
-        with multiprocessing.Pool(processes=len(prev_rtsp_url_list)) as pool:
+        with multiprocessing.Pool(processes=len(active_urls)) as pool:
             async_results = []
-            for url, process_id in zip(prev_rtsp_url_list, range(len(prev_rtsp_url_list))):
+            for url, process_id in zip(active_urls, range(len(active_urls))):
                 roi_settings = roi_setting_list[process_id]
                 async_result = pool.apply_async(detect_objects,
                                                 args=(url, process_id + 1, roi_settings,
@@ -202,6 +203,7 @@ async def camfeed(user: user_dependency, db: db_dependency, request: Request):
         raise HTTPException(status_code=401, detail='Authentication Failed')
     global prev_rtsp_urls
     global roi_settings_list
+    global display_list
     global email_list
 
     email_list.clear()
@@ -212,11 +214,13 @@ async def camfeed(user: user_dependency, db: db_dependency, request: Request):
         for _ in rtsp_urls:
             roi_settings_list.append(RoiSettings())
         prev_rtsp_urls = rtsp_urls
+        display_list.clear()
+        display_list = [{"url": url, "status": True} for url in prev_rtsp_urls]
 
     global num_cameras
     num_cameras = len(prev_rtsp_urls)
     return templates.TemplateResponse("camfeed.html",
-                                      {"request": request, "num_cameras": num_cameras, "user": user})
+                                      {"request": request, "display_list": display_list, "user": user})
 
 
 # '/stream_camera/{cam_index}' endpoint that gets video captures from urls and returns streaming response
@@ -294,19 +298,55 @@ async def adjust_roi(request: Request, user: user_dependency, cam_index: int):
     return RedirectResponse(url="/camfeed", status_code=303)
 
 
+@router.get("/choose_streams", response_class=HTMLResponse)
+async def get_choose_streams_page(request: Request, user: user_dependency):
+    if user is None:
+        raise HTTPException(status_code=401, detail='Authentication Failed')
+    global display_list
+    return templates.TemplateResponse("choose_streams.html",
+                                      {"request": request, "user": user, "rtsp_urls": display_list})
+
+
+@router.post("/display_stream/{cam_index}")
+async def choose_display_streams(user: user_dependency, cam_index: int):
+    if user is None:
+        raise HTTPException(status_code=401, detail='Authentication Failed')
+    global prev_rtsp_urls
+    global display_list
+    if cam_index < 1 or cam_index > len(prev_rtsp_urls):
+        raise HTTPException(status_code=400, detail="Invalid camera index")
+    display_list[cam_index - 1]["status"] = True
+
+    return RedirectResponse(url="/camfeed/choose_streams", status_code=303)
+
+
+@router.post("/hide_stream/{cam_index}")
+async def choose_display_streams(user: user_dependency, cam_index: int):
+    if user is None:
+        raise HTTPException(status_code=401, detail='Authentication Failed')
+    global prev_rtsp_urls
+    global display_list
+    if cam_index < 1 or cam_index > len(prev_rtsp_urls):
+        raise HTTPException(status_code=400, detail="Invalid camera index")
+    display_list[cam_index - 1]["status"] = False
+
+    return RedirectResponse(url="/camfeed/choose_streams", status_code=303)
+
+
 # '/start_detection' endpoint that starts object detection by calling concurrent_detection function (multiprocessing)
 @router.post("/start_detection", response_class=JSONResponse)
-async def start_detection(request: Request, user: user_dependency):
+async def start_detection(user: user_dependency):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
     global detection_process
-    global prev_rtsp_urls
+    global display_list
     global roi_settings_list
     msg = "Takip zaten çalışıyor"
     if detection_process is None or not detection_process.is_alive():
+        active_urls = [entry["url"] for entry in display_list if entry["status"]]
         mp_shared.manager_detection_event.set()
         detection_process = multiprocessing.Process(target=concurrent_detection,
-                                                    args=(prev_rtsp_urls, roi_settings_list, mp_shared.manager_queue,
+                                                    args=(active_urls, roi_settings_list, mp_shared.manager_queue,
                                                           mp_shared.manager_detection_event,))
         detection_process.start()
         msg = None
@@ -316,7 +356,7 @@ async def start_detection(request: Request, user: user_dependency):
 
 # '/stop_detection' endpoint that ends object detection
 @router.post("/stop_detection", response_class=JSONResponse)
-async def stop_detection(request: Request, user: user_dependency):
+async def stop_detection(user: user_dependency):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
     global detection_process
