@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from starlette.responses import StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -219,8 +219,19 @@ async def camfeed(user: user_dependency, db: db_dependency, request: Request):
 
     global num_cameras
     num_cameras = len(prev_rtsp_urls)
+    cameras_per_row = 2
     return templates.TemplateResponse("camfeed.html",
-                                      {"request": request, "display_list": display_list, "user": user})
+                                      {"request": request, "display_list": display_list,
+                                       "user": user, "cameras_per_row": cameras_per_row})
+
+
+@router.post("/update_cameras_per_row", response_class=HTMLResponse)
+async def update_cameras_per_row(request: Request, user: user_dependency, cameras_per_row: int = Form(...)):
+    if user is None:
+        raise HTTPException(status_code=401, detail='Authentication Failed')
+    return templates.TemplateResponse("camfeed.html",
+                                      {"request": request, "display_list": display_list,
+                                       "user": user, "cameras_per_row": cameras_per_row})
 
 
 # '/stream_camera/{cam_index}' endpoint that gets video captures from urls and returns streaming response
@@ -298,6 +309,7 @@ async def adjust_roi(request: Request, user: user_dependency, cam_index: int):
     return RedirectResponse(url="/camfeed", status_code=303)
 
 
+# '/choose_streams' endpoint that renders choose_streams template
 @router.get("/choose_streams", response_class=HTMLResponse)
 async def get_choose_streams_page(request: Request, user: user_dependency):
     if user is None:
@@ -307,8 +319,9 @@ async def get_choose_streams_page(request: Request, user: user_dependency):
                                       {"request": request, "user": user, "rtsp_urls": display_list})
 
 
+# '/display_stream/{cam_index}' endpoint that displays the chosen camera
 @router.post("/display_stream/{cam_index}")
-async def choose_display_streams(user: user_dependency, cam_index: int):
+async def display_streams(user: user_dependency, cam_index: int):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
     global prev_rtsp_urls
@@ -320,8 +333,9 @@ async def choose_display_streams(user: user_dependency, cam_index: int):
     return RedirectResponse(url="/camfeed/choose_streams", status_code=303)
 
 
+# '/hide_stream/{cam_index}' endpoint that hides the chosen camera
 @router.post("/hide_stream/{cam_index}")
-async def choose_display_streams(user: user_dependency, cam_index: int):
+async def hide_streams(user: user_dependency, cam_index: int):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
     global prev_rtsp_urls

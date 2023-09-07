@@ -15,15 +15,24 @@
     </form>
   </div>
   <div style="display: inline-block; margin: 0 10px;">
+    <form action="/camfeed/choose_streams/" method="get">
+      <button type="submit" class="btn btn-primary">Yayın Şeç</button>
+    </form>
+  </div>
+  <div style="display: inline-block; margin: 0 10px;">
     <form action="/camfeed/stop_detection/" method="post">
       <button type="submit" class="btn btn-danger">Takibi Bitir</button>
     </form>
   </div>
   <div style="margin-top: 10px;">
-    <form action="/camfeed/choose_streams/" method="get">
-      <button type="submit" class="btn btn-primary">Yayın Şeç</button>
+  <div style="display: inline-block; overflow: hidden;">
+    <form action="/camfeed/update_cameras_per_row" method="post">
+      <label for="camerasPerRow" style="color: white">Satır Başına Kamera:</label>
+      <input type="number" id="camerasPerRow" name="cameras_per_row" value="{{ cameras_per_row }}" min="1" max="10" style="border: none; border-radius: 1rem;">
+      <button type="submit" class="btn btn-primary" style="border-radius: 1rem;">Uygula</button>
     </form>
   </div>
+</div>
 </div>
 <div class="detection-log-panel" hidden>
   <h4 class="log-header" style="color: white;">Takip Kaydı</h4>
@@ -34,10 +43,12 @@
 </div>
 <p class="space-cam"></p>
 <p class="space-cam"></p>
+{% set cameras_per_row = cameras_per_row | default(2) %}
 <div class="row">
+  {% set camera_count = 0 %}
   {% for camera_info in display_list %}
     {% if camera_info.status %}
-        <div class="col-md-6">
+        <div class="col-md-{{ 12 // cameras_per_row }}">
             <h5 style="color: white;">Kamera {{ loop.index }}</h5>
             <div class="video-container">
                 <img src="{{ '/camfeed/stream_camera/' ~ loop.index }}" alt="Camera Feed"
@@ -49,6 +60,10 @@
                 <a href="{{ '/camfeed/adjust_roi/' ~ loop.index }}" class="btn btn-primary">ROI Ayarla</a>
             </div>
         </div>
+        {% set camera_count = camera_count + 1 %}
+        {% if camera_count % cameras_per_row == 0 %}
+          </div><div class="row">
+        {% endif %}
     {% endif %}
   {% endfor %}
 </div>

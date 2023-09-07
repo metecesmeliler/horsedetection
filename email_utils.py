@@ -2,6 +2,9 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+# IMPORTANT! The function below configures a free MailTrap server for testing purposes.
+# IMPORTANT! Be sure to update it before using it with forgot password, new register etc.
+
 
 def send_email(receiver, html_content, plain_content, subject):
     sender = "narin59a@gmail.com"
